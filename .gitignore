@@ -1,0 +1,18 @@
+# Python files
+__pycache__/
+*.pyc
+
+# Environment files
+.env
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Django files
+*.log
