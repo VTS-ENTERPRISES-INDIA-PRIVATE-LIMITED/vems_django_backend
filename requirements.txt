@@ -27,3 +27,7 @@ cryptography==37.0.2
 
 # Python Dotenv for loading environment variables
 python-dotenv==1.0.0
+
+# MySQL client for Python
+mysqlclient==2.1.0  # Check for the latest version
+
