@@ -24,3 +24,6 @@ pyjwt==2.3.0
 
 # Cryptography library for security-related functionality
 cryptography==37.0.2
+
+# Python Dotenv for loading environment variables
+python-dotenv==1.0.0
