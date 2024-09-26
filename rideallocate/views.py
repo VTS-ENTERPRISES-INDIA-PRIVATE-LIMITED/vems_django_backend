@@ -9,8 +9,8 @@ from geopy.distance import geodesic
 import polyline
 from datetime import datetime, time
 from django.db.models import Q
-from .models import Trip, VehiclesData, PickUpData,Ride_histories
-from .models import EscortManagement, CabAllocation, DropingData,Histories
+from .models import Trip, VehiclesData, PickUpData,Ride_histories,CabVacantDetails
+from .models import EscortManagement, CabAllocation, DropingData,Histories,ShiftVehiclesData
 from django.http import HttpResponse
 from django.db import transaction
 import logging
@@ -19,6 +19,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from django.http import JsonResponse
 from django.conf import settings
+from datetime import date
 
 
 logging.basicConfig(level=logging.INFO)
@@ -27,12 +28,20 @@ graphhopper_api_key_1 = settings.GRAPHOPPER_API_KEY_1
 google_api_key_1 = settings.GOOGLE_API_KEY_1
 
 
-def load_data():
+def load_data(shift_time):
     try:
-        trips = Trip.objects.all()
-        vehicle_details = VehiclesData.objects.all()
+        #trips = Trip.objects.all()
+        trips = Trip.objects.filter(in_time__startswith=shift_time)
+        if not trips.exists():
+            raise
+        vehicle_details = ShiftVehiclesData.objects.filter(VehicleShift__isnull=True)
+        if not vehicle_details.exists():
+            print("not exists")  
+            vehicle_details = VehiclesData.objects.all()
+
         data = pd.DataFrame(list(trips.values()))
         vehicle_detail_df = pd.DataFrame(list(vehicle_details.values()))
+        
         return data, vehicle_detail_df
     except Exception as e:
         logging.error(f"Error loading data contact Db Team: {e}")
@@ -166,6 +175,7 @@ def get_driving_distance(start_point, end_point):
         return None
 
 def ride_allocation(employee_df, capacity_dic, cab_number_dic, first_distances):
+    #print(employee_df, capacity_dic, cab_number_dic, first_distances)
     try:
         employee_locations = [[row['latitude'], row['longitude']] for _, row in employee_df.iterrows()]
         assigned_employees = []
@@ -179,9 +189,12 @@ def ride_allocation(employee_df, capacity_dic, cab_number_dic, first_distances):
             office_location = [office_lat, office_lon]
             start_lat, start_lon = office_location
             end_lat, end_lon = farthest_employee_location
+            #print(start_lat,start_lon,end_lat,end_lon)
             osrm_url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full"
-            response = requests.get(osrm_url, timeout=10)
+            response = requests.get(osrm_url, timeout=100)
+            print(response)
             if response.status_code == 200:
+                print("ok url ")
                 data = response.json()
                 route_geometry = data['routes'][0]['geometry']
                 decoded_route = polyline.decode(route_geometry)
@@ -230,7 +243,10 @@ def ride_allocation(employee_df, capacity_dic, cab_number_dic, first_distances):
 
 def ride(request):
     try:
-        data, cab_details_df = load_data()
+        time_param = request.GET.get('time')
+        data, cab_details_df = load_data(time_param)
+        if data is None or cab_details_df is None:
+            return JsonResponse({"error": "Not a valid data"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         cab_number_dic, capacity_dic = prepare_cab_details(cab_details_df)
         data = filter_data(data)
         groups = get_directional_data(data)
@@ -247,12 +263,13 @@ def ride(request):
             df = pd.merge(df, cab_details_df[['VehicleNumber', 'SeatCapacity', 'VehicleId']], on='VehicleNumber', how='left')
             merged_dfs.append(df)
         combined_df = pd.concat(merged_dfs, ignore_index=True)
+
         for index, row in combined_df.iterrows():
             try:
                 result = PickUpData(
                     booking_id=row['booking_id'],
                     employee_id=row['employee_id'],
-                    date=row['date'],
+                    date=date.today(),
                     in_time=row['in_time'],
                     out_time=row['out_time'],
                     employee_name=row['employee_name'],
@@ -266,6 +283,8 @@ def ride(request):
                     vehicle_id=row['VehicleId']
                 )
                 result.save()
+                VehiclesData.objects.filter(VehicleId=row['VehicleId']).update(VehicleShift=time_param)
+
                 #cumulative_time(result)
             except Exception as e:
                 logging.error(f"Error saving result: {e}")
@@ -310,10 +329,12 @@ def train_new_data(request):
         return JsonResponse({"error": "Failed data update"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['GET'])
+
 def train_and_ride(request):
     try:
-        """results = Result.objects.all().values(
+        time_param = request.GET.get('time')
+
+        """results = PickUpData.objects.all().values(
             'booking_id', 
             'employee_id', 
             'date', 
@@ -338,6 +359,35 @@ def train_and_ride(request):
         df.to_csv(csv_file_path, index=False)
 
         print(f"Data successfully written to {csv_file_path}")"""
+
+        today = date.today()
+        pickup_data = PickUpData.objects.filter(date=today).first()
+        if pickup_data:
+            if pickup_data.date == today:
+                for vehicle in VehiclesData.objects.exclude(VehicleShift__startswith=pickup_data.in_time):
+                    shift_vehicle = ShiftVehiclesData(
+                        VehicleId=vehicle.VehicleId,
+                        VehicleName=vehicle.VehicleName,
+                        VehicleNumber=vehicle.VehicleNumber,
+                        Mileage=vehicle.Mileage,
+                        YearOfManufacturing=vehicle.YearOfManufacturing,
+                        SeatCapacity=vehicle.SeatCapacity,
+                        VehicleType=vehicle.VehicleType,
+                        VehicleImage=vehicle.VehicleImage,
+                        InsuranceNumber=vehicle.InsuranceNumber,
+                        FuelType=vehicle.FuelType,
+                        VehicleStatus=vehicle.VehicleStatus,
+                        VendorId=vehicle.VendorId,
+                        VendorName=vehicle.VendorName,
+                        DriverId=vehicle.DriverId,
+                        AddedDate=vehicle.AddedDate,
+                        VehicleShift=vehicle.VehicleShift
+                    )
+                    shift_vehicle.save()
+            else:
+                ShiftVehiclesData.objects.all().delete()
+        else:
+            pass
         response = train_new_data(request)
         if response.status_code == 200:
             print("ride allocation under processing...")
@@ -346,11 +396,13 @@ def train_and_ride(request):
                 print("priority & cumulative time calcs under processing...")
                 get_priority_and_cumulative_time()
                 return JsonResponse({"success": "Rides allocated"}, status=status.HTTP_200_OK)
+            else:
+                return JsonResponse({"error": "failed data update train and ride"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return Response({"error": "Failed data update"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return JsonResponse({"error": "failed data update"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     except Exception as e:
         logging.error(f"Error in train_and_ride: {e}")
-        return Response({"error": "Failed Retrain & update allocation"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return JsonResponse({"error": "train and ride"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 def get_driving_distance(start_point, end_point):
     """
@@ -646,7 +698,7 @@ def add_escort(escorts, index, employees):
         logging.error(f"Error at add escort:{e}")
         return []
 
-def process_cab_allocations():
+"""def process_cab_allocations():
     try:
         try:
             results_data = PickUpData.objects.all()
@@ -803,13 +855,253 @@ def process_cab_allocations():
                                     else:
                                         data[extra_cab] = first_half_employees
                                     cvd = cvd[cvd['VehicleId'] != extra_cab]
-        return {'data': data, 'status_code': 200, 'message': "Cab allocations processed successfully"}
+
+        data_ = adjust_priority(data)
+        return {'data': data_, 'status_code': 200, 'message': "Cab allocations processed successfully"}
+    except Exception as e:
+        logging.error(f"Error processing cab allocations: {e}")
+        return {'error': 'Error processing cab allocations'}"""
+
+def process_cab_allocations(shift_time,today):
+    try:
+        try:
+            results_data = Ride_histories.objects.filter(in_time__startswith=shift_time, date=today)
+            
+            #results_data = PickUpData.objects.all()
+            if results_data.exists():
+                with transaction.atomic():
+                    cab_allocation_data = [
+                        CabAllocation(
+                            booking_id=item.booking_id,
+                            employee_id=item.employee_id,
+                            date=item.date,
+                            in_time=item.in_time,
+                            out_time=item.out_time,
+                            employee_name=item.employee_name,
+                            gender=item.gender,
+                            address=item.address,
+                            city=item.city,
+                            latitude=item.latitude,
+                            longitude=item.longitude,
+                            VehicleNumber=item.VehicleNumber,
+                            SeatCapacity=item.SeatCapacity,
+                            vehicle_id=item.vehicle_id,
+                            CumulativeTravelTime=item.CumulativeTravelTime,
+                            priority_order=item.priority_order
+                        ) for item in results_data if item.priority_order is not None and item.CumulativeTravelTime is not None
+                    ]
+
+                    if cab_allocation_data:
+                        CabAllocation.objects.bulk_create(cab_allocation_data)
+                    else:
+                        logging.info("No CabAllocation objects to create, Check Priorities & Times is availble in Result of Ride allocation")
+                        logging.info("Process the Ride allocation first go--> 'shift_update/'")
+                        return {'error': 'Error processing cab allocations'}
+            else:
+                logging.info("Perform Ride allocation before Escort assining...! fetch this URL shift_update/")
+                return {'error': 'Error processing cab allocations'}
+        except Exception as e:
+            logging.error(f"Error in new data insertion: {e}")
+            return JsonResponse({"error": "Failed data update"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Copy data from vehicledetails to cabvacantdetails
+        available_vehicles = VehiclesData.objects.filter(VehicleStatus=0)
+        cab_vacant_data = []
+
+        for vehicle in available_vehicles:
+            cab_vacant_data.append(CabVacantDetails(
+                VehicleId=vehicle.VehicleId,
+                VehicleStatus = vehicle.VehicleStatus,
+                VehicleName =  vehicle.VehicleName,
+                VehicleNumber =  vehicle.VehicleNumber,
+                Mileage =  vehicle.Mileage,
+                YearOfManufacturing = vehicle.YearOfManufacturing,
+                SeatCapacity = vehicle.SeatCapacity,
+                VehicleType = vehicle.VehicleType,
+                VehicleImage = vehicle.VehicleImage,
+                InsuranceNumber = vehicle.InsuranceNumber,
+                FuelType = vehicle.FuelType,
+                VendorId = vehicle.VendorId,
+                VendorName =vehicle.VendorName,
+                DriverId = vehicle.DriverId,
+                
+            ))
+
+        CabVacantDetails.objects.bulk_create(cab_vacant_data)
+
+        cab_vacant_details = CabVacantDetails.objects.all()
+        #cab_details_df = pd.DataFrame(list(cab_vacant_details.values()))
+        cab_details_df = VehiclesData.objects.all()
+
+        # Update cabvacantdetails based on vehicle_status
+        allocated_vehicles = VehiclesData.objects.filter(VehicleStatus=1)
+        for vehicle in allocated_vehicles:
+            CabVacantDetails.objects.filter(VehicleId=vehicle.VehicleId).update(VehicleStatus=1)
+
+        escorts = EscortManagement.objects.all()
+        data = CabAllocation.objects.all()
+
+        cvd = pd.DataFrame(list(cab_vacant_details.values()))
+        cd = pd.DataFrame(list(cab_details_df.values()))
+        ed = pd.DataFrame(list(escorts.values()))
+        dp = pd.DataFrame(list(data.values()))
+
+        sorted_df = dp.sort_values(by=['priority_order'])
+        data_ = sorted_df.groupby('vehicle_id').apply(lambda x: x.to_dict(orient='records')).to_dict()
+
+        for vehicle_id, employees in data_.items():
+            if isinstance(employees, list) and employees and 'priority_order' in employees[0]:
+                max_priority = len(employees)
+                for employee in employees:
+                    employee['priority_order'] = (max_priority - int(employee['priority_order'])) + 1
+
+        data = {key: list(reversed(value)) for key, value in data_.items()}
+
+        cvd = cvd.sort_values(by=['SeatCapacity'])
+
+        employee_out_time = list(data.items())[0][1][0]['out_time']
+        result = find_available_escort(employee_out_time)
+        escorts = escorts.filter(EscortId__in=result)
+
+        index = 0
+        items_to_process = list(data.items())
+        for cab, employees in items_to_process:
+            if all(emp['gender'].lower() == 'male' for emp in employees):
+                continue
+            cab_capacity = employees[0]['SeatCapacity']
+            if all(emp['gender'].lower() == 'female' for emp in employees):
+                if cab_capacity > len(employees):
+                    employees = add_escort(escorts, index, employees)
+                    data[cab] = employees
+                    index += 1
+                    if cab in cvd['VehicleId'].values:
+                        vehicle_id = cab
+                        CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+                elif cab_capacity == len(employees):
+                    larger_cabs = cvd[cvd['SeatCapacity'] > cab_capacity]
+                    if not larger_cabs.empty:
+                        new_cab_id = larger_cabs.iloc[0]['VehicleId']
+                        employees = add_escort(escorts, index, employees)
+                        data[new_cab_id] = employees
+                        index += 1
+                        cvd = cvd[cvd['VehicleId'] != new_cab_id]
+                        cvd = pd.concat([cvd, cd[cd['VehicleId'] == cab]], ignore_index=True)
+                        del data[cab]
+                        if new_cab_id in cvd['VehicleId'].values:
+                            vehicle_id = new_cab_id
+                            CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+                    elif larger_cabs.empty and not cvd.empty:
+                        half = len(employees) // 2
+                        extra_capacity_cabs = cvd[cvd['SeatCapacity'] > half]
+                        extra_cab = extra_capacity_cabs.iloc[0]['VehicleId']
+
+                        first_half_employees = employees[:half]
+                        first_half_employees = add_escort(escorts, index, first_half_employees)
+                        data[cab] = first_half_employees
+                        index += 1
+                        if cab in cvd['VehicleId'].values:
+                            vehicle_id = cab
+                            CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+
+                        second_half_employees = employees[half:]
+                        second_half_employees = add_escort(escorts, index, second_half_employees)
+                        data[extra_cab] = second_half_employees
+                        index += 1
+                        cvd = cvd[cvd['VehicleId'] != extra_cab]
+                        if extra_cab in cvd['VehicleId'].values:
+                            vehicle_id = extra_cab
+                            CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+            else:
+                last_employee = employees[-1]
+                if last_employee['gender'].lower() == 'male':
+                    continue
+                last_female = next((emp for emp in reversed(employees) if emp['gender'].lower() == 'female'), None)
+                last_male = next((emp for emp in reversed(employees) if emp['gender'].lower() == 'male'), None)
+
+                if last_female and last_male:
+                    distance = haversine(last_male["latitude"], last_male["longitude"], last_female["latitude"], last_female["longitude"])
+                    if distance > 0.5:
+
+                        if cab_capacity > len(employees):
+                            employees = add_escort(escorts, index, employees)
+                            data[cab] = employees
+                            index += 1
+                            if cab in cvd['VehicleId'].values:
+                                vehicle_id = cab
+                                CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+
+                        elif cab_capacity == len(employees):
+                            larger_cabs = cvd[cvd['SeatCapacity'] > cab_capacity]
+                            if not larger_cabs.empty:
+                                new_cab_id = larger_cabs.iloc[0]['VehicleId']
+                                employees = add_escort(escorts, index, employees)
+                                data[new_cab_id] = employees
+                                index += 1
+                                cvd = cvd[cvd['VehicleId'] != new_cab_id]
+                                cvd = pd.concat([cvd, cd[cd['VehicleId'] == cab]], ignore_index=True)
+                                del data[cab]
+                                if new_cab_id in cvd['VehicleId'].values:
+                                    vehicle_id = new_cab_id
+                                    CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+                            elif larger_cabs.empty and not cvd.empty:
+                                half = len(employees) // 2
+                                extra_capacity_cabs = cvd[cvd['SeatCapacity'] > half]
+                                extra_cab = extra_capacity_cabs.iloc[0]['VehicleId']
+                                second_half_employees = employees[half:]
+                                second_half_employees = add_escort(escorts, index, second_half_employees)
+                                data[cab] = second_half_employees
+                                index += 1
+                                if cab in cvd['VehicleId'].values:
+                                    vehicle_id = cab
+                                    CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+                                first_half_employees = employees[:half]
+                                if all(emp['gender'].lower() == 'female' for emp in first_half_employees):
+                                    first_half_employees = add_escort(escorts, index, first_half_employees)
+                                    data[extra_cab] = first_half_employees
+                                    index += 1
+                                    cvd = cvd[cvd['VehicleId'] != extra_cab]
+                                    if extra_cab in cvd['VehicleId'].values:
+                                        vehicle_id = extra_cab
+                                        CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+                                else:
+                                    data[extra_cab] = first_half_employees
+                                    cvd = cvd[cvd['VehicleId'] != extra_cab]
+                                    if extra_cab in cvd['VehicleId'].values:
+                                        vehicle_id = extra_cab
+                                        CabVacantDetails.objects.filter(VehicleId=vehicle_id).update(VehicleStatus=1)
+    
+        print("-------------------")
+        data_ = adjust_priority(data)
+        return {'data': data_, 'status_code': 200, 'message': "Cab allocations processed successfully"}
     except Exception as e:
         logging.error(f"Error processing cab allocations: {e}")
         return {'error': 'Error processing cab allocations'}
 
-def main_view(request):
+def adjust_priority(data):
     try:
+        process = dict(data.items())
+        for veh_id, bookings in process.items():
+            non_escort_data = [entry for entry in bookings if 'priority_order' in entry]
+            if non_escort_data and non_escort_data[0]['priority_order'] != 1:
+                non_escort_index = 1
+                for book in bookings:
+                    if 'escort_id' in book:
+                        continue
+                    book['priority_order'] = non_escort_index
+                    non_escort_index += 1
+        return process
+    except AttributeError as e:
+        raise AttributeError("Error: 'data' object does not have required attributes") from e
+    except KeyError as e:
+        raise KeyError("Error: Required key not found in 'data' object") from e
+    except Exception as e:
+        raise Exception("An unexpected error occurred at adjust_priority") from e
+
+
+def main_view(request):
+    
+    try:
+        time_param = request.GET.get('time')
         print("Escort's assigning under processing...")
         histories_to_save = []
         for result_escort_assign in DropingData.objects.all():
@@ -838,7 +1130,8 @@ def main_view(request):
         DropingData.objects.all().delete()
         CabAllocation.objects.all().delete()
 
-        response = process_cab_allocations()
+        today = date.today()
+        response = process_cab_allocations(time_param,today)
         if 'error' not in response:
             data = response['data']
             result_escorts = []
