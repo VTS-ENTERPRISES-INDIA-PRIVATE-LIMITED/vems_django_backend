@@ -26,6 +26,7 @@ logging.basicConfig(level=logging.INFO)
 office_lat, office_lon = 12.9775, 80.2518
 graphhopper_api_key_1 = settings.GRAPHOPPER_API_KEY_1
 google_api_key_1 = settings.GOOGLE_API_KEY_1
+graphhopper_api_key_3='502c7c56-bbda-433f-acbd-00398b3f0bc1'
 
 
 def load_data(shift_time):
@@ -199,8 +200,8 @@ def ride_allocation(employee_df, capacity_dic, cab_number_dic, first_distances):
             if response.status_code == 200:
                 data = response.json()
                 route_geometry = data['routes'][0]['geometry']"""
-            api_key_geo='502c7c56-bbda-433f-acbd-00398b3f0bc1'
-            graphhopper_url = f"https://graphhopper.com/api/1/route?point={start_lat},{start_lon}&point={end_lat},{end_lon}&vehicle=car&locale=en&key={api_key_geo}"
+            
+            graphhopper_url = f"https://graphhopper.com/api/1/route?point={start_lat},{start_lon}&point={end_lat},{end_lon}&vehicle=car&locale=en&key={graphhopper_api_key_3}"
             response = requests.get(graphhopper_url)
             
             # Check the response
@@ -405,13 +406,13 @@ def train_and_ride(request):
                             )
                             shift_vehicle.save()
                     else:
-                        print("already this shift allocated")
-                        return JsonResponse({"success": "Rides already allocated"}, status=status.HTTP_200_OK)
+                        logging.info("Shift already assined...!")
+                        return JsonResponse({"success": f"Rides already allocated to the shift {time_param}"}, status=status.HTTP_200_OK)
                 else:
-                    print("No cabs availble")
+                    logging.info("No cabs availble...!")
                     return JsonResponse({"Not found": "No cabs availble"}, status=400)
             else:
-                print("day changed....")
+                logging.info("first shift allocation for today")
                 ShiftVehiclesData.objects.all().delete()
                 VehiclesData.objects.update(VehicleShift=None)
         else:
@@ -425,7 +426,7 @@ def train_and_ride(request):
             if ride_res.status_code == 200:
                 print("priority & cumulative time calcs under processing...")
                 get_priority_and_cumulative_time()
-                return JsonResponse({"success": "Rides allocated"}, status=status.HTTP_200_OK)
+                return JsonResponse({"success": f"Rides allocated to the shift {time_param}"}, status=status.HTTP_200_OK)
             else:
                 return JsonResponse({"error": "failed data update train and ride"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
@@ -727,41 +728,50 @@ def add_escort(escorts, index, employees):
     except Exception as e:
         logging.error(f"Error at add escort:{e}")
         return []
+def cab_allcate_shifting(result_data):
+    try:
+        with transaction.atomic():
+            cab_allocation_data = [
+                CabAllocation(
+                    booking_id=item.booking_id,
+                    employee_id=item.employee_id,
+                    date=item.date,
+                    in_time=item.in_time,
+                    out_time=item.out_time,
+                    employee_name=item.employee_name,
+                    gender=item.gender,
+                    address=item.address,
+                    city=item.city,
+                    latitude=item.latitude,
+                    longitude=item.longitude,
+                    VehicleNumber=item.VehicleNumber,
+                    SeatCapacity=item.SeatCapacity,
+                    vehicle_id=item.vehicle_id,
+                    CumulativeTravelTime=item.CumulativeTravelTime,
+                    priority_order=item.priority_order
+                ) for item in result_data if item.priority_order is not None and item.CumulativeTravelTime is not None
+            ]
 
+            if cab_allocation_data:
+                CabAllocation.objects.bulk_create(cab_allocation_data)
+                return True
+            else:
+                logging.info("No CabAllocation objects to create, Check Priorities & Times is availble in Result of Ride allocation")
+                logging.info("Process the Ride allocation first go--> 'pickup/'")
+                return {'error': 'Error processing cab allocations'}
+    except Exception as e:
+        logging.error(f"Error in cab_allocate_shifting{e}")
+        return {'error': 'Error processing cab allocations'}
 
 def process_cab_allocations(shift_time,today):
     try:    
         try:
+            rd = PickUpData.objects.filter(date=today,in_time__startswith = shift_time,vehicle_id__isnull=False,CumulativeTravelTime__isnull=False,priority_order__isnull=False)
             results_data = Ride_histories.objects.filter(in_time__startswith=shift_time, date=today)
             if results_data.exists():
-                with transaction.atomic():
-                    cab_allocation_data = [
-                        CabAllocation(
-                            booking_id=item.booking_id,
-                            employee_id=item.employee_id,
-                            date=item.date,
-                            in_time=item.in_time,
-                            out_time=item.out_time,
-                            employee_name=item.employee_name,
-                            gender=item.gender,
-                            address=item.address,
-                            city=item.city,
-                            latitude=item.latitude,
-                            longitude=item.longitude,
-                            VehicleNumber=item.VehicleNumber,
-                            SeatCapacity=item.SeatCapacity,
-                            vehicle_id=item.vehicle_id,
-                            CumulativeTravelTime=item.CumulativeTravelTime,
-                            priority_order=item.priority_order
-                        ) for item in results_data if item.priority_order is not None and item.CumulativeTravelTime is not None
-                    ]
-
-                    if cab_allocation_data:
-                        CabAllocation.objects.bulk_create(cab_allocation_data)
-                    else:
-                        logging.info("No CabAllocation objects to create, Check Priorities & Times is availble in Result of Ride allocation")
-                        logging.info("Process the Ride allocation first go--> 'pickup/'")
-                        return {'error': 'Error processing cab allocations'}
+                cab_allcate_shifting(results_data)
+            elif rd.exists:
+                cab_allcate_shifting(rd)
             else:
                 logging.info("Perform Ride allocation before Escort assining...! fetch this URL pickup/")
                 return {'error': 'Error processing cab allocations'}
@@ -1016,9 +1026,9 @@ def main_view(request):
             
             DropingData.objects.bulk_create(result_escorts)
             
-            return JsonResponse({'success': "Escorts assigned ...!"}, status=200)
+            return JsonResponse({'success': f"Escorts assigned to the shift {time_param}"}, status=200)
         else:
-            return JsonResponse({'Error': "Processing failed...!"}, status=400)
+            return JsonResponse({'Error': "The ride allocation for this data has not done"}, status=400)
     except Exception as e:
         logging.error(f"Error at escort assigns: {e}")
         return JsonResponse({'error': 'Error saving resultd escort assigns'}, status=500)
