@@ -192,9 +192,7 @@ def ride_allocation(employee_df, capacity_dic, cab_number_dic, first_distances):
             #print(start_lat,start_lon,end_lat,end_lon)
             osrm_url = f"http://router.project-osrm.org/route/v1/driving/{start_lon},{start_lat};{end_lon},{end_lat}?overview=full"
             response = requests.get(osrm_url, timeout=100)
-            print(response)
             if response.status_code == 200:
-                print("ok url ")
                 data = response.json()
                 route_geometry = data['routes'][0]['geometry']
                 decoded_route = polyline.decode(route_geometry)
@@ -362,30 +360,35 @@ def train_and_ride(request):
 
         today = date.today()
         pickup_data = PickUpData.objects.filter(date=today).first()
+        
         if pickup_data:
-            if pickup_data.date == today:
-                for vehicle in VehiclesData.objects.exclude(VehicleShift__startswith=pickup_data.in_time):
-                    shift_vehicle = ShiftVehiclesData(
-                        VehicleId=vehicle.VehicleId,
-                        VehicleName=vehicle.VehicleName,
-                        VehicleNumber=vehicle.VehicleNumber,
-                        Mileage=vehicle.Mileage,
-                        YearOfManufacturing=vehicle.YearOfManufacturing,
-                        SeatCapacity=vehicle.SeatCapacity,
-                        VehicleType=vehicle.VehicleType,
-                        VehicleImage=vehicle.VehicleImage,
-                        InsuranceNumber=vehicle.InsuranceNumber,
-                        FuelType=vehicle.FuelType,
-                        VehicleStatus=vehicle.VehicleStatus,
-                        VendorId=vehicle.VendorId,
-                        VendorName=vehicle.VendorName,
-                        DriverId=vehicle.DriverId,
-                        AddedDate=vehicle.AddedDate,
-                        VehicleShift=vehicle.VehicleShift
-                    )
-                    shift_vehicle.save()
+            if not VehiclesData.objects.exclude(VehiclesShift__isnull=True).exists():
+                if pickup_data.date == today:
+                    for vehicle in VehiclesData.objects.exclude(VehicleShift__startswith=pickup_data.in_time):
+                        print(vehicle.VehicleShift)
+                        shift_vehicle = ShiftVehiclesData(
+                            VehicleId=vehicle.VehicleId,
+                            VehicleName=vehicle.VehicleName,
+                            VehicleNumber=vehicle.VehicleNumber,
+                            Mileage=vehicle.Mileage,
+                            YearOfManufacturing=vehicle.YearOfManufacturing,
+                            SeatCapacity=vehicle.SeatCapacity,
+                            VehicleType=vehicle.VehicleType,
+                            VehicleImage=vehicle.VehicleImage,
+                            InsuranceNumber=vehicle.InsuranceNumber,
+                            FuelType=vehicle.FuelType,
+                            VehicleStatus=vehicle.VehicleStatus,
+                            VendorId=vehicle.VendorId,
+                            VendorName=vehicle.VendorName,
+                            DriverId=vehicle.DriverId,
+                            AddedDate=vehicle.AddedDate,
+                            VehicleShift=vehicle.VehicleShift
+                        )
+                        shift_vehicle.save()
+                else:
+                    ShiftVehiclesData.objects.all().delete()
             else:
-                ShiftVehiclesData.objects.all().delete()
+                return JsonResponse({"error": "No cabs availble"}, status=400)
         else:
             pass
         response = train_new_data(request)
