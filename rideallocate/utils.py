@@ -7,12 +7,12 @@ import pandas as pd
 from geopy.distance import geodesic, great_circle
 from geopy.distance import geodesic
 import polyline
-from .models import Trip,VehiclesData,PickUpData
+from .models import Trip,VehicleDetail,Result
 from django.http import HttpResponse
 
 def load_data():
     trips = Trip.objects.all()
-    vehicle_details = VehiclesData.objects.all()
+    vehicle_details = VehicleDetail.objects.all()
     
     # Convert data to dataframes
     data = pd.DataFrame(list(trips.values()))
@@ -23,12 +23,12 @@ def load_data():
 def prepare_cab_details(cab_details_df):
     cab_number_dic = {}
     for index, row in cab_details_df.iterrows():
-        if row['SeatCapacity'] in cab_number_dic:
-            cab_number_dic[row['SeatCapacity']].append(row['vehicle_number'])
+        if row['seat_capacity'] in cab_number_dic:
+            cab_number_dic[row['seat_capacity']].append(row['vehicle_number'])
         else:
-            cab_number_dic[row['SeatCapacity']] = [row['vehicle_number']]
+            cab_number_dic[row['seat_capacity']] = [row['vehicle_number']]
     capacity_dic = {}
-    lis = cab_details_df['SeatCapacity'].to_list()
+    lis = cab_details_df['seat_capacity'].to_list()
     lis_set = list(set(lis))
     for i in set(lis_set):
         capacity_dic[i] = lis.count(i)
@@ -184,11 +184,11 @@ def ride(request):
         for cab_number, indices in cabs.items():
             for index in indices:
                 df.at[index, 'vehicle_number'] = cab_number
-        df = pd.merge(df, cab_details_df[['vehicle_number', 'SeatCapacity', 'vehicleId']], on='vehicle_number', how='left')
+        df = pd.merge(df, cab_details_df[['vehicle_number', 'seat_capacity', 'vehicleId']], on='vehicle_number', how='left')
         merged_dfs.append(df)
     combined_df = pd.concat(merged_dfs, ignore_index=True)
     for index, row in combined_df.iterrows():
-        PickUpData = PickUpData(
+        result = Result(
             booking_id=row['booking_id'],
             employee_id=row['employee_id'],
             date=row['date'],
@@ -201,10 +201,10 @@ def ride(request):
             latitude=row['latitude'],
             longitude=row['longitude'],
             vehicle_number=row['vehicle_number'],
-            SeatCapacity=row['SeatCapacity'],
+            seat_capacity=row['seat_capacity'],
             vehicle_id=row['vehicleId']
         )
-        PickUpData.save()
+        result.save()
     return HttpResponse({"success":"done"}, status=200)
 
 
@@ -220,7 +220,7 @@ import pandas as pd
 from geopy.distance import geodesic, great_circle
 from geopy.distance import geodesic
 import polyline
-from .models import Trip, VehiclesData, PickUpData,Ride_histories
+from .models import Trip, VehicleDetail, Result,Ride_histories
 from django.http import HttpResponse
 from django.db import transaction
 import logging
@@ -237,7 +237,7 @@ office_lat, office_lon = 12.9775, 80.2518
 def load_data():
     try:
         trips = Trip.objects.all()
-        vehicle_details = VehiclesData.objects.all()
+        vehicle_details = VehicleDetail.objects.all()
         data = pd.DataFrame(list(trips.values()))
         vehicle_detail_df = pd.DataFrame(list(vehicle_details.values()))
         return data, vehicle_detail_df
@@ -249,12 +249,12 @@ def prepare_cab_details(cab_details_df):
     try:
         cab_number_dic = {}
         for index, row in cab_details_df.iterrows():
-            if row['SeatCapacity'] in cab_number_dic:
-                cab_number_dic[row['SeatCapacity']].append(row['vehicle_number'])
+            if row['seat_capacity'] in cab_number_dic:
+                cab_number_dic[row['seat_capacity']].append(row['vehicle_number'])
             else:
-                cab_number_dic[row['SeatCapacity']] = [row['vehicle_number']]
+                cab_number_dic[row['seat_capacity']] = [row['vehicle_number']]
         capacity_dic = {}
-        lis = cab_details_df['SeatCapacity'].to_list()
+        lis = cab_details_df['seat_capacity'].to_list()
         lis_set = list(set(lis))
         for i in set(lis_set):
             capacity_dic[i] = lis.count(i)
@@ -451,12 +451,12 @@ def ride(request):
             for cab_number, indices in cabs.items():
                 for index in indices:
                     df.at[index, 'vehicle_number'] = cab_number
-            df = pd.merge(df, cab_details_df[['vehicle_number', 'SeatCapacity', 'vehicleId']], on='vehicle_number', how='left')
+            df = pd.merge(df, cab_details_df[['vehicle_number', 'seat_capacity', 'vehicleId']], on='vehicle_number', how='left')
             merged_dfs.append(df)
         combined_df = pd.concat(merged_dfs, ignore_index=True)
         for index, row in combined_df.iterrows():
             try:
-                PickUpData = PickUpData(
+                result = Result(
                     booking_id=row['booking_id'],
                     employee_id=row['employee_id'],
                     date=row['date'],
@@ -469,14 +469,14 @@ def ride(request):
                     latitude=row['latitude'],
                     longitude=row['longitude'],
                     vehicle_number=row['vehicle_number'],
-                    SeatCapacity=row['SeatCapacity'],
+                    seat_capacity=row['seat_capacity'],
                     vehicle_id=row['vehicleId']
                 )
-                PickUpData.save()
-                cumulative_time(PickUpData)
+                result.save()
+                cumulative_time(result)
             except Exception as e:
-                logging.error(f"Error saving PickUpData: {e}")
-                if PickUpData.objects.filter(booking_id=row['booking_id']).exists():
+                logging.error(f"Error saving result: {e}")
+                if Result.objects.filter(booking_id=row['booking_id']).exists():
                     logging.info(f"Booking ID {row['booking_id']} already allocated.....!")
         return JsonResponse({"success": "Rides allocated"}, status=status.HTTP_200_OK)
 
@@ -487,7 +487,7 @@ def ride(request):
 def train_new_data(request):
     try:
         with transaction.atomic():
-            PickUpDatas_data = PickUpData.objects.all()
+            results_data = Result.objects.all()
 
             histories_data = [
                 Ride_histories(
@@ -503,52 +503,52 @@ def train_new_data(request):
                     latitude=item.latitude,
                     longitude=item.longitude,
                     vehicle_number=item.vehicle_number,
-                    SeatCapacity=item.SeatCapacity,
+                    seat_capacity=item.seat_capacity,
                     vehicle_id=item.vehicle_id
-                ) for item in PickUpDatas_data
+                ) for item in results_data
             ]
             Ride_histories.objects.bulk_create(histories_data)
-            PickUpData.objects.all().delete()
+            Result.objects.all().delete()
         return JsonResponse({"success": "Data update & Old data moved to Bin"}, status=status.HTTP_200_OK)
     except Exception as e:
         logging.error(f"Error in new data insertion: {e}")
         return JsonResponse({"error": "Failed data update"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-def cumulative_time(PickUpData):
+def cumulative_time(result):
     try:
         api_key = "AIzaSyABQaAOBDJ9w0nH8w1RfpK3bilCVvn1cxY"
-        vehicle_id = PickUpData.vehicle_id
-        PickUpDatas_with_same_vehicle_id = PickUpData.objects.filter(vehicle_id=vehicle_id)
+        vehicle_id = result.vehicle_id
+        results_with_same_vehicle_id = Result.objects.filter(vehicle_id=vehicle_id)
         cumulative_travel_times = []
         prev_lat = office_lat
         prev_lon = office_lon
         cumulative_time = 0
-        for PickUpData_with_same_vehicle_id in PickUpDatas_with_same_vehicle_id:
+        for result_with_same_vehicle_id in results_with_same_vehicle_id:
             try:
-                travel_time = calculate_travel_time(PickUpData_with_same_vehicle_id, prev_lat, prev_lon, api_key)
+                travel_time = calculate_travel_time(result_with_same_vehicle_id, prev_lat, prev_lon, api_key)
                 cumulative_time += travel_time
                 cumulative_travel_times.append(cumulative_time)
-                prev_lat = PickUpData_with_same_vehicle_id.latitude
-                prev_lon = PickUpData_with_same_vehicle_id.longitude
+                prev_lat = result_with_same_vehicle_id.latitude
+                prev_lon = result_with_same_vehicle_id.longitude
             except Exception as e:
-                logging.error(f"Error calculating travel time for PickUpData {PickUpData_with_same_vehicle_id.id}: {e}")
+                logging.error(f"Error calculating travel time for result {result_with_same_vehicle_id.id}: {e}")
         try:
-            PickUpData.CumulativeTravelTime = cumulative_travel_times[-1]
-            PickUpData.save()
+            result.CumulativeTravelTime = cumulative_travel_times[-1]
+            result.save()
         except IndexError:
-            logging.error(f"No cumulative travel times calculated for PickUpData {PickUpData.id}")
+            logging.error(f"No cumulative travel times calculated for result {result.id}")
     except Exception as e:
-        logging.error(f"Error processing PickUpData {PickUpData.id}: {e}")
+        logging.error(f"Error processing result {result.id}: {e}")
 
 
-def calculate_travel_time(PickUpData, center_lat, center_lon, api_key):
+def calculate_travel_time(result, center_lat, center_lon, api_key):
     try:
         # Calculate travel time between two points using Google Distance Matrix API
         url = "https://maps.googleapis.com/maps/api/distancematrix/json"
         params = {
             'origins': f'{center_lat},{center_lon}',
-            'destinations': f'{PickUpData.latitude},{PickUpData.longitude}',
+            'destinations': f'{result.latitude},{result.longitude}',
             'key': api_key,
             'mode': 'driving'
         }
@@ -652,15 +652,15 @@ def upload_vehicles(request):
             reader = df.to_dict(orient='records')
 
         for row in reader:
-            VehiclesData.objects.create(
+            VehicleDetail.objects.create(
                 vehicleId=row['vehicleId'],
                 vehicle_number=row['vehicleNumber'],
-                SeatCapacity=int(row['seatCapacity']),
+                seat_capacity=int(row['seatCapacity']),
                 vehicleName=row['vehicleName'],
                 vehicleType=row['vehicleType'],
                 vendorName=row['vendorName'],
                 insuranceNumber=row['insuranceNumber'],
-                Mileage=float(row['Mileage']),
+                mileage=float(row['mileage']),
                 yearOfManufacturing=int(row['yearOfManufacturing']),
                 fuelType=row['fuelType'],
                 vehicleImage=row['vehicleImage'],
