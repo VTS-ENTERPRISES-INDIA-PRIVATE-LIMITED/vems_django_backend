@@ -79,7 +79,7 @@ WSGI_APPLICATION = 'vems.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
+"""DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'vemsfinal',
@@ -87,6 +87,17 @@ DATABASES = {
         'PASSWORD': 'vtsadmin',  # Specify your MySQL password here
         'HOST': 'vts-emp-system.cp0o0iwgeayn.ap-south-1.rds.amazonaws.com',  # Use HOST instead of DB_URL
         'PORT': '3306',  # Use uppercase 'PORT'
+    }
+}"""
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'vemsfinal',
+        'USER': 'vtsadmin',
+        'PASSWORD': 'vtsadmin',
+        'HOST': 'vts-emp-system.cp0o0iwgeayn.ap-south-1.rds.amazonaws.com',
+        'PORT': '3306',
     }
 }
 

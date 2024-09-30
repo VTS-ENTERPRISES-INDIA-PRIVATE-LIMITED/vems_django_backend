@@ -321,7 +321,7 @@ def train_new_data(request):
                     BookingId=item.BookingId, 
                     TripDate=item.TripDate, 
                     LoginTime=item.LoginTime
-                ).exists():
+                ).exists() and item.CumulativeTravelTime is not None and item.PriorityOrder is not None and item.VehicleId is not None:
                     histories_data.append(
                         Ride_histories(
                             BookingId=item.BookingId,
@@ -384,11 +384,12 @@ def train_and_ride(request):
         pickup_data = PickUp.objects.filter(TripDate=today).first()
         
         if pickup_data:
-            if pickup_data.TripDate == today:
-                #for vehicle in VehicleDetails.objects.exclude(VehicleShift__exact=pickup_data.LoginTime):
-                vehicles = VehicleDetails.objects.filter(VehicleShift__isnull=True)
-                exists = VehicleDetails.objects.filter(VehicleShift=time_param).exists()
-                exists2 = PickUp.objects.filter(CumulativeTravelTime__isnull = True,VehicleId__isnull = True,PriorityOrder__isnull=True).exists()
+            if pickup_data.Date == today:
+                #for vehicle in VehiclesData.objects.exclude(VehicleShift__exact=pickup_data.LoginTime):
+                vehicles = VehiclesData.objects.filter(VehicleShift__isnull=True)
+                exists = VehiclesData.objects.filter(VehicleShift=time_param).exists()
+                exists2 = PickUpData.objects.filter(CumulativeTravelTime__isnull = True,VehicleId__isnull = True,PriorityOrder__isnull=True).exists()
+                
                 if vehicles.exists():
                     if not exists and not exists2:
                         ShiftVehiclesData.objects.all().delete()
@@ -426,6 +427,7 @@ def train_and_ride(request):
             VehicleDetails.objects.update(VehicleShift=None)
             pass
         response = train_new_data(request)
+        data_1 = json.loads(response.content.decode('utf-8'))
         if response.status_code == 200:
             print("ride allocation under processing...")
             ride_res = ride(request,today)
@@ -433,11 +435,15 @@ def train_and_ride(request):
             if ride_res.status_code == 200:
                 print("priority & cumulative time calcs under processing...")
                 get_priority_and_cumulative_time()
+                if PickUpData.objects.filter(
+                    Q(VehicleId__isnull=True) | Q(PriorityOrder__isnull=True) | Q(CumulativeTravelTime__isnull=True)
+                ).exists():
+                    return JsonResponse({'error':"Ride allocation processing failed...!"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                 return JsonResponse({"success": f"Rides allocated to the shift {time_param}"}, status=status.HTTP_200_OK)
             else:
                 return JsonResponse(data_, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return JsonResponse({"error": "failed data update"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return JsonResponse(data_1, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     except Exception as e:
         logging.error(f"Error in train_and_ride: {e}")
         return JsonResponse({"error": "train and ride"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -669,7 +675,7 @@ def cumulative_time(data, center_lat, center_lon):
             prev_lat = center_lat
             prev_lon = center_lon
             cumulative_time = 0
-
+            
             for index, row in vehicle_data.iterrows():
                 travel_time = function_for_travelling_time(row, prev_lat, prev_lon)
 
@@ -691,14 +697,21 @@ def cumulative_time(data, center_lat, center_lon):
         return None
 #################################################################################################
 #EScorts views from here
+
 def convert_to_time(time_str):
+    print(time_str)
     try:
-        if isinstance(time_str, time):
+        if type(time_str) == datetime.time:
             return time_str
         else:
-            return datetime.strptime(time_str, "%H:%M").time()
+            for fmt in ["%H:%M", "%H:%M:%S", "%H:%M:%S.%f"]:
+                try:
+                    return datetime.strptime(time_str, fmt).time()
+                except ValueError:
+                    pass
+            raise ValueError(f"Invalid time format: {time_str}")
     except Exception as e:
-        logging.error(f"Error at convert to time:{e}")
+        logging.error(f"Error at convert to time: {e}")
 
 def find_available_escort(employee_LogoutTime):
     try:
@@ -1013,7 +1026,8 @@ def main_view(request):
             Histories.objects.all().delete()
             CabVacantDetails.objects.update(VehicleStatus=0)
         print("Escort's assigning under processing...")
-        if Drop.objects.filter(LoginTime=time_param,TripDate=today).exists() or Histories.objects.filter(LoginTime=time_param,TripDate=today).exists():
+
+        if DropingData.objects.filter(LoginTime=time_param,Date=today).exists() or Histories.objects.filter(LoginTime=time_param,Date=today).exists():
             return JsonResponse({'success': f"Escorts already assigned to the shift {time_param}"}, status=200)
         else:
             histories_to_save = []
