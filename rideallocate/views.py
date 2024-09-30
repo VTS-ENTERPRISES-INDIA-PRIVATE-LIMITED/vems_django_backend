@@ -9,8 +9,8 @@ from geopy.distance import geodesic
 import polyline
 from datetime import datetime, time
 from django.db.models import Q
-from .models import CabBookingTable, VehiclesData, PickUp,Ride_histories,CabVacantDetails
-from .models import EscortManagement, CabAllocation, Drop,Histories,ShiftVehiclesData
+from .models import CabBooking,VehicleData,PickUp,Ride_histories,CabVacantDetails
+from .models import CabAllocation, Drop,Histories,ShiftVehiclesData,EscortData
 from django.http import HttpResponse
 from django.db import transaction
 import logging
@@ -20,7 +20,7 @@ from rest_framework.decorators import api_view
 from django.http import JsonResponse
 from django.conf import settings
 from datetime import date
-
+from django.db import connection
 
 logging.basicConfig(level=logging.INFO)
 office_lat, office_lon = 12.9775, 80.2518
@@ -31,11 +31,69 @@ graphhopper_api_key_4 = 'e3367da0-cf5e-47b0-9f16-5b061af7faba'
 
 today = date.today()
 #today = date(2024, 10, 3)
+def get_data_from_VehicleDetails_table():
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT * FROM VehicleDetails")
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
+        results = [dict(zip(columns, row)) for row in rows]
+        
+        model_instances = []
+        for result in results:
+            model_instance = VehicleData(**result)  # Correctly create the model instance
+            model_instances.append(model_instance)
+    
+    return model_instances  # This returns a list of model instances
 
+# No change needed if you want a list, but make sure you treat it as a list
+VehicleDetails = get_data_from_VehicleDetails_table()
+print(VehicleDetails)
+
+
+def get_data_from_CabBookingTable():
+   with connection.cursor() as cursor:
+        cursor.execute("SELECT * FROM CabBookingTable")
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
+        results = [dict(zip(columns, row)) for row in rows]
+        
+        model_instances = []
+        for result in results:
+            model_instance = CabBooking(**result)  # Correctly create the model instance
+            model_instances.append(model_instance)
+    
+   return model_instances  # This returns a list of model instances
+
+# No change needed if you want a list, but make sure you treat it as a list
+CabBookingTable = get_data_from_CabBookingTable()
+print(CabBookingTable)
+
+
+def get_data_from_EscortManagement_table():
+    with connection.cursor() as cursor:
+        # Write your SQL query to fetch data from the existing table
+        cursor.execute("SELECT * FROM EscortManagement;")
+        
+        # Fetch all the rows
+        rows = cursor.fetchall()
+        
+        # Optionally, get the column names (if needed)
+        columns = [col[0] for col in cursor.description]
+
+        # Combine columns and rows into a list of dictionaries (optional)
+        results = [dict(zip(columns, row)) for row in rows]
+        model_instances = []
+        for result in results:
+            model_instance = EscortData(**result)  # Create a model instance
+            model_instances.append(model_instance)
+    
+    return model_instances  # Return model instances
+EscortManagement=get_data_from_EscortManagement_table()
+print(EscortManagement)
 def load_data(shift_time):
     try:
         #trips = CabBookingTable.objects.all()
-        trips = CabBookingTable.objects.filter(LoginTime__startswith=shift_time)
+        trips = CabBooking.objects.filter(LoginTime__startswith=shift_time)
         if not trips.exists():
             raise Exception("No data availble for Ride allocations")
         vehicle_details = ShiftVehiclesData.objects.all()
@@ -43,7 +101,7 @@ def load_data(shift_time):
             vehicle_details = ShiftVehiclesData.objects.filter(VehicleShift__isnull=True)
         elif not vehicle_details.exists():
             print("starting shift...") 
-            vehicle_details = VehiclesData.objects.all()
+            vehicle_details = VehicleDetails.objects.all()
             Ride_histories.objects.all().delete()
 
         data = pd.DataFrame(list(trips.values()))
@@ -57,12 +115,12 @@ def prepare_cab_details(cab_details_df):
     try:
         cab_number_dic = {}
         for index, row in cab_details_df.iterrows():
-            if row['SeatCapacity'] in cab_number_dic:
-                cab_number_dic[row['SeatCapacity']].append(row['VehicleNumber'])
+            if row['VehicleSeatCapacity'] in cab_number_dic:
+                cab_number_dic[row['VehicleSeatCapacity']].append(row['VehicleNumber'])
             else:
-                cab_number_dic[row['SeatCapacity']] = [row['VehicleNumber']]
+                cab_number_dic[row['VehicleSeatCapacity']] = [row['VehicleNumber']]
         capacity_dic = {}
-        lis = cab_details_df['SeatCapacity'].to_list()
+        lis = cab_details_df['VehicleSeatCapacity'].to_list()
         lis_set = list(set(lis))
         for i in set(lis_set):
             capacity_dic[i] = lis.count(i)
@@ -273,7 +331,7 @@ def ride(request,today):
             for cab_number, indices in cabs.items():
                 for index in indices:
                     df.at[index, 'VehicleNumber'] = cab_number
-            df = pd.merge(df, cab_details_df[['VehicleNumber', 'SeatCapacity', 'VehicleId']], on='VehicleNumber', how='left')
+            df = pd.merge(df, cab_details_df[['VehicleNumber', 'VehicleSeatCapacity', 'VehicleId']], on='VehicleNumber', how='left')
             merged_dfs.append(df)
         combined_df = pd.concat(merged_dfs, ignore_index=True)
 
@@ -292,11 +350,11 @@ def ride(request,today):
                     Latitude=row['Latitude'],
                     Longitude=row['Longitude'],
                     VehicleNumber=row['VehicleNumber'],
-                    SeatCapacity=row['SeatCapacity'],
+                    VehicleSeatCapacity=row['VehicleSeatCapacity'],
                     VehicleId=row['VehicleId']
                 )
                 result.save()
-                VehiclesData.objects.filter(VehicleId=row['VehicleId']).update(VehicleShift=time_param)
+                VehicleDetails.objects.filter(VehicleId=row['VehicleId']).update(VehicleShift=time_param)
 
                 #cumulative_time(result)
             except Exception as e:
@@ -335,7 +393,7 @@ def train_new_data(request):
                             Latitude=item.Latitude,
                             Longitude=item.Longitude,
                             VehicleNumber=item.VehicleNumber,
-                            SeatCapacity=item.SeatCapacity,
+                            VehicleSeatCapacity=item.VehicleSeatCapacity,
                             VehicleId=item.VehicleId,
                             CumulativeTravelTime=item.CumulativeTravelTime,
                             PriorityOrder=item.PriorityOrder
@@ -367,7 +425,7 @@ def train_and_ride(request):
             'Latitude', 
             'Longitude', 
             'VehicleNumber', 
-            'SeatCapacity', 
+            'VehicleSeatCapacity', 
             'VehicleId',
             'CumulativeTravelTime',
             'PriorityOrder'
@@ -384,9 +442,9 @@ def train_and_ride(request):
         
         if pickup_data:
             if pickup_data.TripDate == today:
-                #for vehicle in VehiclesData.objects.exclude(VehicleShift__exact=pickup_data.LoginTime):
-                vehicles = VehiclesData.objects.filter(VehicleShift__isnull=True)
-                exists = VehiclesData.objects.filter(VehicleShift=time_param).exists()
+                #for vehicle in VehicleDetails.objects.exclude(VehicleShift__exact=pickup_data.LoginTime):
+                vehicles = VehicleDetails.objects.filter(VehicleShift__isnull=True)
+                exists = VehicleDetails.objects.filter(VehicleShift=time_param).exists()
                 exists2 = PickUp.objects.filter(CumulativeTravelTime__isnull = True,VehicleId__isnull = True,PriorityOrder__isnull=True).exists()
                 if vehicles.exists():
                     if not exists and not exists2:
@@ -396,18 +454,17 @@ def train_and_ride(request):
                                 VehicleId=vehicle.VehicleId,
                                 VehicleName=vehicle.VehicleName,
                                 VehicleNumber=vehicle.VehicleNumber,
-                                Mileage=vehicle.Mileage,
-                                YearOfManufacturing=vehicle.YearOfManufacturing,
-                                SeatCapacity=vehicle.SeatCapacity,
+                                VehicleMileageRange=vehicle.VehicleMileageRange,
+                                VehicleManufacturedYear=vehicle.VehicleManufacturedYear,
+                                VehicleSeatCapacity=vehicle.VehicleSeatCapacity,
                                 VehicleType=vehicle.VehicleType,
                                 VehicleImage=vehicle.VehicleImage,
-                                InsuranceNumber=vehicle.InsuranceNumber,
-                                FuelType=vehicle.FuelType,
+                                VehicleInsuranceNumber=vehicle.VehicleInsuranceNumber,
+                                VehicleFuelType=vehicle.VehicleFuelType,
                                 VehicleStatus=vehicle.VehicleStatus,
                                 VendorId=vehicle.VendorId,
-                                VendorName=vehicle.VendorName,
-                                DriverId=vehicle.DriverId,
-                                AddedDate=vehicle.AddedDate,
+                                VendorName=vehicle.VendorName,                                
+                                VehicleAddedDate=vehicle.VehicleAddedDate,
                                 VehicleShift=vehicle.VehicleShift
                             )
                             shift_vehicle.save()
@@ -420,10 +477,10 @@ def train_and_ride(request):
             else:
                 logging.info("first shift allocation for today")
                 ShiftVehiclesData.objects.all().delete()
-                VehiclesData.objects.update(VehicleShift=None)
+                VehicleDetails.objects.update(VehicleShift=None)
         else:
             ShiftVehiclesData.objects.all().delete()
-            VehiclesData.objects.update(VehicleShift=None)
+            VehicleDetails.objects.update(VehicleShift=None)
             pass
         response = train_new_data(request)
         if response.status_code == 200:
@@ -752,7 +809,7 @@ def cab_allcate_shifting(result_data):
                     Latitude=item.Latitude,
                     Longitude=item.Longitude,
                     VehicleNumber=item.VehicleNumber,
-                    SeatCapacity=item.SeatCapacity,
+                    VehicleSeatCapacity=item.VehicleSeatCapacity,
                     VehicleId=item.VehicleId,
                     CumulativeTravelTime=item.CumulativeTravelTime,
                     PriorityOrder=item.PriorityOrder
@@ -813,7 +870,7 @@ def process_cab_allocations(shift_time,today):
                 return {'error':'No cabs availble...!'}
         else:
             CabVacantDetails.objects.all().delete()
-            available_vehicles = VehiclesData.objects.filter(VehicleStatus=0)
+            available_vehicles = VehicleDetails.objects.filter(VehicleStatus=0)
             with transaction.atomic():
                 cab_vacant_data = []
                 for vehicle in available_vehicles:
@@ -822,16 +879,15 @@ def process_cab_allocations(shift_time,today):
                         VehicleStatus = vehicle.VehicleStatus,
                         VehicleName =  vehicle.VehicleName,
                         VehicleNumber =  vehicle.VehicleNumber,
-                        Mileage =  vehicle.Mileage,
-                        YearOfManufacturing = vehicle.YearOfManufacturing,
-                        SeatCapacity = vehicle.SeatCapacity,
+                        VehicleMileageRange =  vehicle.VehicleMileageRange,
+                        VehicleManufacturedYear = vehicle.VehicleManufacturedYear,
+                        VehicleSeatCapacity = vehicle.VehicleSeatCapacity,
                         VehicleType = vehicle.VehicleType,
                         VehicleImage = vehicle.VehicleImage,
-                        InsuranceNumber = vehicle.InsuranceNumber,
-                        FuelType = vehicle.FuelType,
+                        VehicleInsuranceNumber = vehicle.VehicleInsuranceNumber,
+                        VehicleFuelType = vehicle.VehicleFuelType,
                         VendorId = vehicle.VendorId,
                         VendorName =vehicle.VendorName,
-                        DriverId = vehicle.DriverId,
                         
                     ))
 
@@ -839,10 +895,10 @@ def process_cab_allocations(shift_time,today):
                 cab_vacant_details = CabVacantDetails.objects.all()
 
         #cab_details_df = pd.DataFrame(list(cab_vacant_details.values()))
-        cab_details_df = VehiclesData.objects.all()
+        cab_details_df = VehicleDetails.objects.all()
 
         # Update cabvacantdetails based on vehicle_status
-        """allocated_vehicles = VehiclesData.objects.filter(VehicleStatus=1)
+        """allocated_vehicles = VehicleDetails.objects.filter(VehicleStatus=1)
         for vehicle in allocated_vehicles:
             CabVacantDetails.objects.filter(VehicleId=vehicle.VehicleId).update(VehicleStatus=1)"""
 
@@ -868,7 +924,7 @@ def process_cab_allocations(shift_time,today):
 
         data = {key: list(reversed(value)) for key, value in data_.items()}
 
-        cvd = cvd.sort_values(by=['SeatCapacity'])
+        cvd = cvd.sort_values(by=['VehicleSeatCapacity'])
         
         employee_LogoutTime = list(data.items())[0][1][0]['LogoutTime']
         result = find_available_escort(employee_LogoutTime)
@@ -881,14 +937,14 @@ def process_cab_allocations(shift_time,today):
         for cab, employees in items_to_process:
             if all(emp['EmployeeGender'].lower() == 'male' for emp in employees):
                 continue
-            cab_capacity = employees[0]['SeatCapacity']
+            cab_capacity = employees[0]['VehicleSeatCapacity']
             if all(emp['EmployeeGender'].lower() == 'female' for emp in employees):
                 if cab_capacity > len(employees):
                     employees = add_escort(escorts, index, employees)
                     data[cab] = employees
                     index += 1
                 elif cab_capacity == len(employees):
-                    larger_cabs = cvd[cvd['SeatCapacity'] > cab_capacity]
+                    larger_cabs = cvd[cvd['VehicleSeatCapacity'] > cab_capacity]
                     if not larger_cabs.empty:
                         new_cab_id = larger_cabs.iloc[0]['VehicleId']
                         employees = add_escort(escorts, index, employees)
@@ -901,7 +957,7 @@ def process_cab_allocations(shift_time,today):
                             
                     elif larger_cabs.empty and not cvd.empty:
                         half = len(employees) // 2
-                        extra_capacity_cabs = cvd[cvd['SeatCapacity'] > half]
+                        extra_capacity_cabs = cvd[cvd['VehicleSeatCapacity'] > half]
                         extra_cab = extra_capacity_cabs.iloc[0]['VehicleId']
 
                         first_half_employees = employees[:half]
@@ -933,7 +989,7 @@ def process_cab_allocations(shift_time,today):
                             index += 1
 
                         elif cab_capacity == len(employees):
-                            larger_cabs = cvd[cvd['SeatCapacity'] > cab_capacity]
+                            larger_cabs = cvd[cvd['VehicleSeatCapacity'] > cab_capacity]
                             if not larger_cabs.empty:
                                 new_cab_id = larger_cabs.iloc[0]['VehicleId']
                                 employees = add_escort(escorts, index, employees)
@@ -945,7 +1001,7 @@ def process_cab_allocations(shift_time,today):
                                 
                             elif larger_cabs.empty and not cvd.empty:
                                 half = len(employees) // 2
-                                extra_capacity_cabs = cvd[cvd['SeatCapacity'] > half]
+                                extra_capacity_cabs = cvd[cvd['VehicleSeatCapacity'] > half]
                                 extra_cab = extra_capacity_cabs.iloc[0]['VehicleId']
                                 second_half_employees = employees[half:]
                                 second_half_employees = add_escort(escorts, index, second_half_employees)
@@ -1032,7 +1088,7 @@ def main_view(request):
                     Latitude=result_escort_assign.Latitude,
                     Longitude=result_escort_assign.Longitude,
                     VehicleNumber=result_escort_assign.VehicleNumber,
-                    SeatCapacity=result_escort_assign.SeatCapacity,
+                    VehicleSeatCapacity=result_escort_assign.VehicleSeatCapacity,
                     VehicleId=result_escort_assign.VehicleId,
                     CumulativeTravelTime=result_escort_assign.CumulativeTravelTime,
                     PriorityOrder=result_escort_assign.PriorityOrder,
@@ -1070,7 +1126,7 @@ def main_view(request):
                                     Latitude=employee['Latitude'],
                                     Longitude=employee['Longitude'],
                                     VehicleNumber=employee.get('VehicleNumber', None),
-                                    SeatCapacity=employee.get('SeatCapacity', None),
+                                    VehicleSeatCapacity=employee.get('VehicleSeatCapacity', None),
                                     VehicleId=VehicleId,
                                     CumulativeTravelTime=employee.get('CumulativeTravelTime', None),
                                     PriorityOrder=employee.get('PriorityOrder', None),

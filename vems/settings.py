@@ -30,7 +30,7 @@ GOOGLE_API_KEY_1 = os.getenv('GOOGLE_API_KEY_1')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['vems-django-backend.onrender.com', 'localhost']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 # Application definition
@@ -82,9 +82,9 @@ WSGI_APPLICATION = 'vems.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'vems_v5',
+        'NAME': 'vemsFinal',
         'USER': 'root',
-        'PASSWORD': 'surya123',
+        'PASSWORD': 'Satya@47',
         'HOST': 'localhost',
         'PORT': '3306',
     }
