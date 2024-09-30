@@ -29,7 +29,7 @@ class Ride_histories(models.Model):
     Longitude = models.FloatField()
     VehicleNumber = models.CharField(max_length=100, null=True)
     SeatCapacity = models.IntegerField(null=True)
-    VehicleId = models.IntegerField(null=True)
+    VehicleId = models.CharField(max_length=100,null=True)
     CumulativeTravelTime = models.FloatField(null=True)
     AddOn = models.DateTimeField(auto_now_add=True,null=True)
     PriorityOrder = models.IntegerField(null=True)
@@ -48,14 +48,14 @@ class PickUpData(models.Model):
     Longitude = models.FloatField()
     VehicleNumber = models.CharField(max_length=100, null=True)
     SeatCapacity = models.IntegerField(null=True)
-    VehicleId = models.IntegerField(null=True)
+    VehicleId = models.CharField(max_length=100,null=True)
     CumulativeTravelTime = models.FloatField(null=True)
     PriorityOrder = models.IntegerField(null=True)
     
 #Escorts tables
 
 class VehiclesData(models.Model):    
-    VehicleId = models.IntegerField(primary_key=True,null=False) 
+    VehicleId = models.CharField(max_length=100,primary_key=True) 
     VehicleName = models.CharField(max_length=50,null=True)  
     VehicleNumber = models.CharField(max_length=100)  
     Mileage = models.FloatField(null=True)  
@@ -65,7 +65,7 @@ class VehiclesData(models.Model):
     VehicleImage = models.CharField(max_length=300,null=True) 
     InsuranceNumber = models.CharField(max_length=100,null=True)  
     FuelType = models.CharField(max_length=30,null=True)  
-    VehicleStatus = models.BooleanField(null=True) 
+    VehicleStatus = models.BooleanField(null=True)
     VendorId = models.CharField(max_length=30,null=True)  
     VendorName = models.CharField(max_length=50,null=True)
     DriverId = models.CharField(max_length=255, null=True, blank=True)
@@ -73,7 +73,7 @@ class VehiclesData(models.Model):
     VehicleShift = models.CharField(max_length=100,null=True)
 
 class ShiftVehiclesData(models.Model):    
-    VehicleId = models.IntegerField(primary_key=True,null=False) 
+    VehicleId = models.CharField(max_length=100,primary_key=True,null=False) 
     VehicleName = models.CharField(max_length=50,null=True)  
     VehicleNumber = models.CharField(max_length=100)  
     Mileage = models.FloatField(null=True)  
@@ -91,7 +91,7 @@ class ShiftVehiclesData(models.Model):
     VehicleShift = models.CharField(max_length=100,null=True)
 
 class CabVacantDetails(models.Model):
-    VehicleId = models.IntegerField(primary_key=True,null=False) 
+    VehicleId = models.CharField(max_length=100,primary_key=True,null=False) 
     VehicleName = models.CharField(max_length=50,null=True)  
     VehicleNumber = models.CharField(max_length=100,null=True)  
     Mileage = models.FloatField(null=True)  
@@ -121,7 +121,7 @@ class CabAllocation(models.Model):
     Longitude = models.FloatField()
     VehicleNumber = models.CharField(max_length=100, null=True)
     SeatCapacity = models.IntegerField(null=True)
-    VehicleId = models.IntegerField(null=True)
+    VehicleId = models.CharField(max_length=100,null=True)
     CumulativeTravelTime = models.FloatField(null=True)
     PriorityOrder = models.PositiveIntegerField(null=True)
 
@@ -159,7 +159,7 @@ class DropingData(models.Model):
     Longitude = models.FloatField()
     VehicleNumber = models.CharField(max_length=100, null=True)
     SeatCapacity = models.IntegerField(null=True)
-    VehicleId = models.IntegerField(null=True)
+    VehicleId = models.CharField(max_length=100,null=True)
     CumulativeTravelTime = models.FloatField(null=True)
     PriorityOrder = models.PositiveIntegerField(null=True)
     EscortId = models.CharField(max_length=100,null=True)
@@ -178,7 +178,7 @@ class Histories(models.Model):
     Longitude = models.FloatField()
     VehicleNumber = models.CharField(max_length=255, null=True, blank=True)
     SeatCapacity = models.IntegerField(null=True, blank=True)
-    VehicleId = models.IntegerField()
+    VehicleId = models.CharField(max_length=100)
     CumulativeTravelTime = models.FloatField(null=True)
     PriorityOrder = models.IntegerField(null=True, blank=True)
     EscortId = models.CharField(max_length=100,null=True)
