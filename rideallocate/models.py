@@ -58,7 +58,7 @@ class Histories(models.Model):
     
 #Escorts tables
 
-class VehicleData(models.Model):    
+class VehicleDetails(models.Model):    
     VehicleId = models.IntegerField(primary_key=True,null=False) 
     VehicleName = models.CharField(max_length=50,null=True)  
     VehicleNumber = models.CharField(max_length=100)  
@@ -126,7 +126,7 @@ class CabAllocation(models.Model):
     CumulativeTravelTime = models.FloatField(null=True)
     PriorityOrder = models.PositiveIntegerField(null=True)
 
-class EscortData(models.Model):
+class EscortManagement(models.Model):
     EscortId = models.CharField(max_length=40,unique = True)
     EscortName = models.CharField(max_length=150)
     EscortProfilePicUpload = models.CharField(max_length=300,null = True)

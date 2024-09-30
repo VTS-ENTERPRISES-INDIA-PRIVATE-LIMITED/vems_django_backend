@@ -9,8 +9,8 @@ from geopy.distance import geodesic
 import polyline
 from datetime import datetime, time
 from django.db.models import Q
-from .models import CabBooking,VehicleData,PickUp,Ride_histories,CabVacantDetails
-from .models import CabAllocation, Drop,Histories,ShiftVehiclesData,EscortData
+from .models import VehicleDetails,PickUp,Ride_histories,CabVacantDetails,CabBooking
+from .models import CabAllocation, Drop,Histories,ShiftVehiclesData,EscortManagement
 from django.http import HttpResponse
 from django.db import transaction
 import logging
@@ -31,65 +31,8 @@ graphhopper_api_key_4 = 'e3367da0-cf5e-47b0-9f16-5b061af7faba'
 
 today = date.today()
 #today = date(2024, 10, 3)
-def get_data_from_VehicleDetails_table():
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM VehicleDetails")
-        rows = cursor.fetchall()
-        columns = [col[0] for col in cursor.description]
-        results = [dict(zip(columns, row)) for row in rows]
-        
-        model_instances = []
-        for result in results:
-            model_instance = VehicleData(**result)  # Correctly create the model instance
-            model_instances.append(model_instance)
-    
-    return model_instances  # This returns a list of model instances
-
-# No change needed if you want a list, but make sure you treat it as a list
-VehicleDetails = get_data_from_VehicleDetails_table()
-print(VehicleDetails)
 
 
-def get_data_from_CabBookingTable():
-   with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM CabBookingTable")
-        rows = cursor.fetchall()
-        columns = [col[0] for col in cursor.description]
-        results = [dict(zip(columns, row)) for row in rows]
-        
-        model_instances = []
-        for result in results:
-            model_instance = CabBooking(**result)  # Correctly create the model instance
-            model_instances.append(model_instance)
-    
-   return model_instances  # This returns a list of model instances
-
-# No change needed if you want a list, but make sure you treat it as a list
-CabBookingTable = get_data_from_CabBookingTable()
-print(CabBookingTable)
-
-
-def get_data_from_EscortManagement_table():
-    with connection.cursor() as cursor:
-        # Write your SQL query to fetch data from the existing table
-        cursor.execute("SELECT * FROM EscortManagement;")
-        
-        # Fetch all the rows
-        rows = cursor.fetchall()
-        
-        # Optionally, get the column names (if needed)
-        columns = [col[0] for col in cursor.description]
-
-        # Combine columns and rows into a list of dictionaries (optional)
-        results = [dict(zip(columns, row)) for row in rows]
-        model_instances = []
-        for result in results:
-            model_instance = EscortData(**result)  # Create a model instance
-            model_instances.append(model_instance)
-    
-    return model_instances  # Return model instances
-EscortManagement=get_data_from_EscortManagement_table()
-print(EscortManagement)
 def load_data(shift_time):
     try:
         #trips = CabBookingTable.objects.all()
