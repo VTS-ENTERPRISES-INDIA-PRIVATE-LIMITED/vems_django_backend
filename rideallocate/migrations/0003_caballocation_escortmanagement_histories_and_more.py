@@ -43,7 +43,7 @@ class Migration(migrations.Migration):
                 ('ContactNumber', models.CharField(max_length=20)),
                 ('Age', models.IntegerField()),
                 ('AadharCardUpload', models.CharField(max_length=300)),
-                ('Address', models.CharField(max_length=300)),
+                ('EmployeeAddress', models.CharField(max_length=300)),
                 ('CertificationUpload', models.CharField(max_length=300)),
                 ('AccountHandlerName', models.CharField(max_length=255)),
                 ('AccountNumber', models.CharField(max_length=40)),

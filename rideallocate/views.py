@@ -9,8 +9,8 @@ from geopy.distance import geodesic
 import polyline
 from datetime import datetime, time
 from django.db.models import Q
-from .models import BookingTable, VehiclesData, PickUpData,Ride_histories,CabVacantDetails
-from .models import EscortManagement, CabAllocation, DropingData,Histories,ShiftVehiclesData
+from .models import CabBookingTable, VehiclesData, PickUp,Ride_histories,CabVacantDetails
+from .models import EscortManagement, CabAllocation, Drop,Histories,ShiftVehiclesData
 from django.http import HttpResponse
 from django.db import transaction
 import logging
@@ -34,8 +34,8 @@ today = date.today()
 
 def load_data(shift_time):
     try:
-        #trips = BookingTable.objects.all()
-        trips = BookingTable.objects.filter(LoginTime__startswith=shift_time)
+        #trips = CabBookingTable.objects.all()
+        trips = CabBookingTable.objects.filter(LoginTime__startswith=shift_time)
         if not trips.exists():
             raise Exception("No data availble for Ride allocations")
         vehicle_details = ShiftVehiclesData.objects.all()
@@ -279,16 +279,16 @@ def ride(request,today):
 
         for index, row in combined_df.iterrows():
             try:
-                result = PickUpData(
+                result = PickUp(
                     BookingId=row['BookingId'],
                     EmployeeId=row['EmployeeId'],
-                    Date=today,
+                    TripDate=today,
                     LoginTime=row['LoginTime'],
                     LogoutTime=row['LogoutTime'],
                     EmployeeName=row['EmployeeName'],
-                    Gender=row['Gender'],
-                    Address=row['Address'],
-                    City=row['City'],
+                    EmployeeGender=row['EmployeeGender'],
+                    EmployeeAddress=row['EmployeeAddress'],
+                    EmployeeCity=row['EmployeeCity'],
                     Latitude=row['Latitude'],
                     Longitude=row['Longitude'],
                     VehicleNumber=row['VehicleNumber'],
@@ -301,7 +301,7 @@ def ride(request,today):
                 #cumulative_time(result)
             except Exception as e:
                 logging.error(f"Error saving result: {e}")
-                if PickUpData.objects.filter(BookingId=row['BookingId']).exists():
+                if PickUp.objects.filter(BookingId=row['BookingId']).exists():
                     logging.info(f"Booking ID {row['BookingId']} already allocated.....!")
 
         return JsonResponse({"success": "Rides allocated"}, status=status.HTTP_200_OK)
@@ -313,25 +313,25 @@ def ride(request,today):
 def train_new_data(request):
     try:
         with transaction.atomic():
-            results_data = PickUpData.objects.all()
+            results_data = PickUp.objects.all()
             histories_data = []
             for item in results_data:
                 if not Ride_histories.objects.filter(
                     BookingId=item.BookingId, 
-                    Date=item.Date, 
+                    TripDate=item.TripDate, 
                     LoginTime=item.LoginTime
                 ).exists():
                     histories_data.append(
                         Ride_histories(
                             BookingId=item.BookingId,
                             EmployeeId=item.EmployeeId,
-                            Date=item.Date,
+                            TripDate=item.TripDate,
                             LoginTime=item.LoginTime,
                             LogoutTime=item.LogoutTime,
                             EmployeeName=item.EmployeeName,
-                            Gender=item.Gender,
-                            Address=item.Address,
-                            City=item.City,
+                            EmployeeGender=item.EmployeeGender,
+                            EmployeeAddress=item.EmployeeAddress,
+                            EmployeeCity=item.EmployeeCity,
                             Latitude=item.Latitude,
                             Longitude=item.Longitude,
                             VehicleNumber=item.VehicleNumber,
@@ -342,7 +342,7 @@ def train_new_data(request):
                         )
                     )
             Ride_histories.objects.bulk_create(histories_data)
-            PickUpData.objects.all().delete()
+            PickUp.objects.all().delete()
         return JsonResponse({"success": "Data update & Old data moved to Bin"}, status=status.HTTP_200_OK)
     except Exception as e:
         logging.error(f"Error in new data insertion: {e}")
@@ -354,16 +354,16 @@ def train_and_ride(request):
     try:
         time_param = request.GET.get('time')
 
-        """results = PickUpData.objects.all().values(
+        """results = PickUp.objects.all().values(
             'BookingId', 
             'EmployeeId', 
-            'Date', 
+            'TripDate', 
             'LoginTime', 
             'LogoutTime', 
             'EmployeeName', 
-            'Gender', 
-            'Address', 
-            'City', 
+            'EmployeeGender', 
+            'EmployeeAddress', 
+            'EmployeeCity', 
             'Latitude', 
             'Longitude', 
             'VehicleNumber', 
@@ -380,14 +380,14 @@ def train_and_ride(request):
 
         print(f"Data successfully written to {csv_file_path}")"""
 
-        pickup_data = PickUpData.objects.filter(Date=today).first()
+        pickup_data = PickUp.objects.filter(TripDate=today).first()
         
         if pickup_data:
-            if pickup_data.Date == today:
+            if pickup_data.TripDate == today:
                 #for vehicle in VehiclesData.objects.exclude(VehicleShift__exact=pickup_data.LoginTime):
                 vehicles = VehiclesData.objects.filter(VehicleShift__isnull=True)
                 exists = VehiclesData.objects.filter(VehicleShift=time_param).exists()
-                exists2 = PickUpData.objects.filter(CumulativeTravelTime__isnull = True,VehicleId__isnull = True,PriorityOrder__isnull=True).exists()
+                exists2 = PickUp.objects.filter(CumulativeTravelTime__isnull = True,VehicleId__isnull = True,PriorityOrder__isnull=True).exists()
                 if vehicles.exists():
                     if not exists and not exists2:
                         ShiftVehiclesData.objects.all().delete()
@@ -476,7 +476,7 @@ def get_optimal_route_for_vehicles(df):
 
         employee_locations = filtered_df[['Longitude', 'Latitude']].values.tolist()
         EmployeeIds = filtered_df['EmployeeId'].tolist()
-        Genders = filtered_df['Gender'].tolist()
+        Genders = filtered_df['EmployeeGender'].tolist()
         LogoutTimes = filtered_df['LogoutTime'].tolist()
 
         distances_from_office = [
@@ -486,13 +486,13 @@ def get_optimal_route_for_vehicles(df):
         if len(EmployeeIds) == 1:
             # Handle the case with only one employee
             emp_id = EmployeeIds[0]
-            Gender = Genders[0]
+            EmployeeGender = Genders[0]
             location = employee_locations[0]
             LogoutTime = LogoutTimes[0]
 
             result[f'{VehicleId}'] = [{
                 "emp_id": emp_id,
-                "Gender": Gender,
+                "EmployeeGender": EmployeeGender,
                 "PriorityOrder": 1,
                 "Latitude": location[1],
                 "Longitude": location[0],
@@ -512,7 +512,7 @@ def get_optimal_route_for_vehicles(df):
         # Create the optimization request body
         optimization_body = {
             "jobs": [
-                {"id": i + 1, "location": loc} for i, (emp_id, Gender, loc, LogoutTime) in enumerate(other_employees)
+                {"id": i + 1, "location": loc} for i, (emp_id, EmployeeGender, loc, LogoutTime) in enumerate(other_employees)
             ],
             "vehicles": [
                 {
@@ -537,7 +537,7 @@ def get_optimal_route_for_vehicles(df):
             optimized_route = data['routes'][0]['steps']
             cab_data = [{
                 "emp_id": farthest_employee[0],
-                "Gender": farthest_employee[1],
+                "EmployeeGender": farthest_employee[1],
                 "PriorityOrder": 1,
                 "Latitude": farthest_employee[2][1],
                 "Longitude": farthest_employee[2][0],
@@ -546,11 +546,11 @@ def get_optimal_route_for_vehicles(df):
             for i, step in enumerate(optimized_route):
                 job_id = step.get('job', None)
                 if job_id:
-                    emp_id, Gender, location, LogoutTime = other_employees[job_id - 1]
+                    emp_id, EmployeeGender, location, LogoutTime = other_employees[job_id - 1]
 
                     cab_data.append({
                         "emp_id": emp_id,
-                        "Gender": Gender,
+                        "EmployeeGender": EmployeeGender,
                         "PriorityOrder": i + 1,
                         "Latitude": location[1],
                         "Longitude": location[0],
@@ -565,7 +565,7 @@ def get_optimal_route_for_vehicles(df):
 
 def get_priority():
     try:
-        result = PickUpData.objects.all()
+        result = PickUp.objects.all()
         data_ = pd.DataFrame(list(result.values()))
         result = get_optimal_route_for_vehicles(data_)
         result_objs = []
@@ -574,12 +574,12 @@ def get_priority():
                 emp_id = employee['emp_id']
                 PriorityOrder = employee['PriorityOrder']
 
-                result_obj = PickUpData.objects.get(EmployeeId=emp_id)
+                result_obj = PickUp.objects.get(EmployeeId=emp_id)
                 result_obj.PriorityOrder = PriorityOrder
                 result_objs.append(result_obj)
 
         with transaction.atomic():
-            PickUpData.objects.bulk_update(result_objs, ['PriorityOrder'])
+            PickUp.objects.bulk_update(result_objs, ['PriorityOrder'])
         return True
     except Exception as e:
         logging.error(f"Error in get_priority: {e}")
@@ -588,24 +588,24 @@ def get_priority():
 def get_priority_and_cumulative_time():
     try:
         if get_priority():
-            result_ = PickUpData.objects.all()
+            result_ = PickUp.objects.all()
             data_ = pd.DataFrame(list(result_.values()))
             data = cumulative_time(data_,office_lat,office_lon)
 
             results_to_update = []
             for index, row in data.iterrows():
                 try:
-                    result_object = PickUpData.objects.get(BookingId=row['BookingId'])
+                    result_object = PickUp.objects.get(BookingId=row['BookingId'])
                     if row['CumulativeTravelTime'] is None:
                         result_object.CumulativeTravelTime = None
                     else:
                         result_object.CumulativeTravelTime = row['CumulativeTravelTime']
                     results_to_update.append(result_object)
-                except PickUpData.DoesNotExist:
+                except PickUp.DoesNotExist:
                     logging.error(f"Result with BookingId {row['BookingId']} does not exist.")
                 except Exception as e:
                     logging.error(f"Error updating result for BookingId {row['BookingId']}: {e}")
-            PickUpData.objects.bulk_update(results_to_update, fields=['CumulativeTravelTime'])
+            PickUp.objects.bulk_update(results_to_update, fields=['CumulativeTravelTime'])
             
         else:
             raise Exception("Failed to allocate priorities & time")
@@ -742,13 +742,13 @@ def cab_allcate_shifting(result_data):
                 CabAllocation(
                     BookingId=item.BookingId,
                     EmployeeId=item.EmployeeId,
-                    Date=item.Date,
+                    TripDate=item.TripDate,
                     LoginTime=item.LoginTime,
                     LogoutTime=item.LogoutTime,
                     EmployeeName=item.EmployeeName,
-                    Gender=item.Gender,
-                    Address=item.Address,
-                    City=item.City,
+                    EmployeeGender=item.EmployeeGender,
+                    EmployeeAddress=item.EmployeeAddress,
+                    EmployeeCity=item.EmployeeCity,
                     Latitude=item.Latitude,
                     Longitude=item.Longitude,
                     VehicleNumber=item.VehicleNumber,
@@ -790,8 +790,8 @@ def get_driving_distance_route(start_point, end_point):
 def process_cab_allocations(shift_time,today):
     try:    
         try:
-            rd = PickUpData.objects.filter(Date=today,LoginTime__startswith = shift_time,VehicleId__isnull=False,CumulativeTravelTime__isnull=False,PriorityOrder__isnull=False)
-            results_data = Ride_histories.objects.filter(LoginTime__startswith=shift_time, Date=today)
+            rd = PickUp.objects.filter(TripDate=today,LoginTime__startswith = shift_time,VehicleId__isnull=False,CumulativeTravelTime__isnull=False,PriorityOrder__isnull=False)
+            results_data = Ride_histories.objects.filter(LoginTime__startswith=shift_time, TripDate=today)
             if results_data.exists():
                 info = cab_allcate_shifting(results_data)
                 if not info:
@@ -847,7 +847,7 @@ def process_cab_allocations(shift_time,today):
             CabVacantDetails.objects.filter(VehicleId=vehicle.VehicleId).update(VehicleStatus=1)"""
 
         escorts = EscortManagement.objects.all()
-        data_females = CabAllocation.objects.filter(Gender='female').exists()
+        data_females = CabAllocation.objects.filter(EmployeeGender='female').exists()
         if not data_females and not EscortManagement.objects.all().exists():
             return {'error': 'No Escorts found'}
         data = CabAllocation.objects.all()
@@ -879,10 +879,10 @@ def process_cab_allocations(shift_time,today):
         index = 0
         items_to_process = list(data.items())
         for cab, employees in items_to_process:
-            if all(emp['Gender'].lower() == 'male' for emp in employees):
+            if all(emp['EmployeeGender'].lower() == 'male' for emp in employees):
                 continue
             cab_capacity = employees[0]['SeatCapacity']
-            if all(emp['Gender'].lower() == 'female' for emp in employees):
+            if all(emp['EmployeeGender'].lower() == 'female' for emp in employees):
                 if cab_capacity > len(employees):
                     employees = add_escort(escorts, index, employees)
                     data[cab] = employees
@@ -917,10 +917,10 @@ def process_cab_allocations(shift_time,today):
                         
             else:
                 last_employee = employees[-1]
-                if last_employee['Gender'].lower() == 'male':
+                if last_employee['EmployeeGender'].lower() == 'male':
                     continue
-                last_female = next((emp for emp in reversed(employees) if emp['Gender'].lower() == 'female'), None)
-                last_male = next((emp for emp in reversed(employees) if emp['Gender'].lower() == 'male'), None)
+                last_female = next((emp for emp in reversed(employees) if emp['EmployeeGender'].lower() == 'female'), None)
+                last_male = next((emp for emp in reversed(employees) if emp['EmployeeGender'].lower() == 'male'), None)
 
                 if last_female and last_male:
                     #distance = haversine(last_male["Latitude"], last_male["Longitude"], last_female["Latitude"], last_female["Longitude"])
@@ -954,16 +954,16 @@ def process_cab_allocations(shift_time,today):
                                 
                                 first_half_employees = employees[:half]
                                 last_employee = first_half_employees[-1]
-                                if all(emp['Gender'].lower() == 'female' for emp in first_half_employees):
+                                if all(emp['EmployeeGender'].lower() == 'female' for emp in first_half_employees):
                                     first_half_employees = add_escort(escorts, index, first_half_employees)
                                     data[extra_cab] = first_half_employees
                                     index += 1
                                     cvd = cvd[cvd['VehicleId'] != extra_cab]
-                                elif last_employee['Gender'].lower() == 'male':
+                                elif last_employee['EmployeeGender'].lower() == 'male':
                                     data[extra_cab] =  first_half_employees
                                 else:
-                                    last_female = next((emp for emp in reversed(first_half_employees) if emp['Gender'].lower() == 'female'), None)
-                                    last_male = next((emp for emp in reversed(first_half_employees) if emp['Gender'].lower() == 'male'), None)
+                                    last_female = next((emp for emp in reversed(first_half_employees) if emp['EmployeeGender'].lower() == 'female'), None)
+                                    last_male = next((emp for emp in reversed(first_half_employees) if emp['EmployeeGender'].lower() == 'male'), None)
                                     if last_female and last_male:
                                         #distance = haversine(last_male["Latitude"], last_male["Longitude"], last_female["Latitude"], last_female["Longitude"])
                                         distance = get_driving_distance_route([last_male["Longitude"], last_male["Latitude"]], [last_female["Longitude"], last_female["Latitude"]])
@@ -1009,26 +1009,26 @@ def adjust_priority(data):
 def main_view(request):
     try:
         time_param = request.GET.get('time')
-        if not DropingData.objects.filter(Date=today).exists() and not Histories.objects.filter(Date=today).exists():
+        if not Drop.objects.filter(TripDate=today).exists() and not Histories.objects.filter(TripDate=today).exists():
             print("new day..")
             Histories.objects.all().delete()
             CabVacantDetails.objects.update(VehicleStatus=0)
         print("Escort's assigning under processing...")
-        if DropingData.objects.filter(LoginTime=time_param,Date=today).exists() or Histories.objects.filter(LoginTime=time_param,Date=today).exists():
+        if Drop.objects.filter(LoginTime=time_param,TripDate=today).exists() or Histories.objects.filter(LoginTime=time_param,TripDate=today).exists():
             return JsonResponse({'success': f"Escorts already assigned to the shift {time_param}"}, status=200)
         else:
             histories_to_save = []
-            for result_escort_assign in DropingData.objects.all():
+            for result_escort_assign in Drop.objects.all():
                 history = Histories(
                     BookingId=result_escort_assign.BookingId,
                     EmployeeId=result_escort_assign.EmployeeId,
-                    Date=result_escort_assign.Date,
+                    TripDate=result_escort_assign.TripDate,
                     LoginTime=result_escort_assign.LoginTime,
                     LogoutTime=result_escort_assign.LogoutTime,
                     EmployeeName=result_escort_assign.EmployeeName,
-                    Gender=result_escort_assign.Gender,
-                    Address=result_escort_assign.Address,
-                    City=result_escort_assign.City,
+                    EmployeeGender=result_escort_assign.EmployeeGender,
+                    EmployeeAddress=result_escort_assign.EmployeeAddress,
+                    EmployeeCity=result_escort_assign.EmployeeCity,
                     Latitude=result_escort_assign.Latitude,
                     Longitude=result_escort_assign.Longitude,
                     VehicleNumber=result_escort_assign.VehicleNumber,
@@ -1041,7 +1041,7 @@ def main_view(request):
                 )
                 histories_to_save.append(history)
             Histories.objects.bulk_create(histories_to_save)
-            DropingData.objects.all().delete()
+            Drop.objects.all().delete()
             CabAllocation.objects.all().delete()
 
             response = process_cab_allocations(time_param,today)
@@ -1057,16 +1057,16 @@ def main_view(request):
                     for employee in employees:
                         if 'id' in employee:
                             if 'BookingId' in employee:
-                                result_escort_assign = DropingData(
+                                result_escort_assign = Drop(
                                     BookingId=employee['BookingId'],
                                     EmployeeId=employee['EmployeeId'],
-                                    Date=employee['Date'],
+                                    TripDate=employee['TripDate'],
                                     LoginTime=employee['LoginTime'],
                                     LogoutTime=employee['LogoutTime'],
                                     EmployeeName=employee['EmployeeName'],
-                                    Gender=employee['Gender'].lower(),
-                                    Address=employee['Address'],
-                                    City=employee['City'],
+                                    EmployeeGender=employee['EmployeeGender'].lower(),
+                                    EmployeeAddress=employee['EmployeeAddress'],
+                                    EmployeeCity=employee['EmployeeCity'],
                                     Latitude=employee['Latitude'],
                                     Longitude=employee['Longitude'],
                                     VehicleNumber=employee.get('VehicleNumber', None),
@@ -1078,7 +1078,7 @@ def main_view(request):
                                 )
                                 result_escorts.append(result_escort_assign)
                 
-                DropingData.objects.bulk_create(result_escorts)
+                Drop.objects.bulk_create(result_escorts)
                 
                 return JsonResponse({'success': f"Escorts assigned to the shift {time_param}"}, status=200)
             else:

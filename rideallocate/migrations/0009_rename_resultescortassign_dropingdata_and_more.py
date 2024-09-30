@@ -12,10 +12,10 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RenameModel(
             old_name='ResultEscortAssign',
-            new_name='DropingData',
+            new_name='Drop',
         ),
         migrations.RenameModel(
             old_name='Result',
-            new_name='PickUpData',
+            new_name='PickUp',
         ),
     ]
