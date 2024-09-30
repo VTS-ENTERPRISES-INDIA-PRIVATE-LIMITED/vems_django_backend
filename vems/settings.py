@@ -82,11 +82,11 @@ WSGI_APPLICATION = 'vems.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'vemsFinal',
-        'USER': 'root',
-        'PASSWORD': 'Satya@47',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'NAME': 'vemsFinals',
+        'USER': 'vtsadmin',  # Specify your MySQL username here
+        'PASSWORD': 'vtsadmin',  # Specify your MySQL password here
+        'HOST': 'vts-emp-system.cp0o0iwgeayn.ap-south-1.rds.amazonaws.com',  # Use HOST instead of DB_URL
+        'PORT': '3306',  # Use uppercase 'PORT'
     }
 }
 
