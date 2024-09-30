@@ -30,7 +30,7 @@ GOOGLE_API_KEY_1 = os.getenv('GOOGLE_API_KEY_1')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['https://vems-django-backend.onrender.com', 'localhost']
+ALLOWED_HOSTS = ['vems-django-backend.onrender.com', 'localhost']
 
 
 # Application definition
