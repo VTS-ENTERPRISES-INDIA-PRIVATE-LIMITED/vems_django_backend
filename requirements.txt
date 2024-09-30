@@ -31,3 +31,5 @@ python-dotenv==1.0.0
 # MySQL client for Python
 mysqlclient==2.1.0  # Check for the latest version
 
+#writers
+waitress
