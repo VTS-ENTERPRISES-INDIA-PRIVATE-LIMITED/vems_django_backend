@@ -29,7 +29,7 @@ GRAPHOPPER_API_KEY_1 = os.getenv('GRAPHOPPER_API_KEY_1')
 GOOGLE_API_KEY_1 = os.getenv('GOOGLE_API_KEY_1')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
-ALLOWED_HOSTS = ['https://vems-django-backend.onrender.com', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 
