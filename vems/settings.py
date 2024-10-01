@@ -60,6 +60,11 @@ MIDDLEWARE = [
 
 CORS_ALLOW_ALL_ORIGINS=True
 
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000", 
+    "https://your-frontend-domain.com",
+]
+
 ROOT_URLCONF = 'vems.urls'
 
 TEMPLATES = [
