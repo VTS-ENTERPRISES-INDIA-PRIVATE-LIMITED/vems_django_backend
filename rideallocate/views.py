@@ -379,6 +379,14 @@ def train_and_ride(request):
         df.to_csv(csv_file_path, index=False)
 
         print(f"Data successfully written to {csv_file_path}")"""
+        avail_1 = BookingTable.objects.all().exists()
+        avail_2 = VehiclesData.objects.all().exists()
+        if not avail_1 or not avail_2:
+            if not avail_1:
+                logging.info("No Booking data is found")
+            if not avail_2:
+                logging.info("No vehicles data is found")
+            return JsonResponse({"error": "Data for ride allocation not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         pickup_data = PickUpData.objects.filter(Date=today).first()
         
