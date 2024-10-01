@@ -33,3 +33,5 @@ mysqlclient==2.1.0  # Check for the latest version
 
 #writers
 waitress
+
+corsheaders
