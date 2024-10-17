@@ -385,7 +385,7 @@ def train_and_ride(request):
             if not avail_1:
                 logging.info("No Booking data is found")
             if not avail_2:
-                logging.info("No vehicles data is found")
+                Logging.info("No vehicles data is found")
             return JsonResponse({"error": "Data for ride allocation not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         pickup_data = PickUpData.objects.filter(Date=today).first()
@@ -605,22 +605,23 @@ def get_priority_and_cumulative_time():
             result_ = PickUpData.objects.all()
             data_ = pd.DataFrame(list(result_.values()))
             data = cumulative_time(data_,office_lat,office_lon)
-
-            results_to_update = []
-            for index, row in data.iterrows():
-                try:
-                    result_object = PickUpData.objects.get(BookingId=row['BookingId'])
-                    if row['CumulativeTravelTime'] is None:
-                        result_object.CumulativeTravelTime = None
-                    else:
-                        result_object.CumulativeTravelTime = row['CumulativeTravelTime']
-                    results_to_update.append(result_object)
-                except PickUpData.DoesNotExist:
-                    logging.error(f"Result with BookingId {row['BookingId']} does not exist.")
-                except Exception as e:
-                    logging.error(f"Error updating result for BookingId {row['BookingId']}: {e}")
-            PickUpData.objects.bulk_update(results_to_update, fields=['CumulativeTravelTime'])
-            
+            if data is not None:
+                results_to_update = []
+                for index, row in data.iterrows():
+                    try:
+                        result_object = PickUpData.objects.get(BookingId=row['BookingId'])
+                        if row['CumulativeTravelTime'] is None:
+                            result_object.CumulativeTravelTime = None
+                        else:
+                            result_object.CumulativeTravelTime = row['CumulativeTravelTime']
+                        results_to_update.append(result_object)
+                    except PickUpData.DoesNotExist:
+                        logging.error(f"Result with BookingId {row['BookingId']} does not exist.")
+                    except Exception as e:
+                        logging.error(f"Error updating result for BookingId {row['BookingId']}: {e}")
+                PickUpData.objects.bulk_update(results_to_update, fields=['CumulativeTravelTime'])
+            else:
+                raise Exception("Failed CumulativeTime calculation")
         else:
             raise Exception("Failed to allocate priorities & time")
     except Exception as e:
@@ -694,12 +695,14 @@ def cumulative_time(data, center_lat, center_lon):
                     prev_lon = row['Longitude']
                 else:
                     logging.warning(f"Warning: Travel time for vehicle {VehicleId} could not be calculated.")
-
             #vehicle_data['CumulativeTravelTime'] = cumulative_travel_times
             vehicle_data.loc[:, 'CumulativeTravelTime'] = cumulative_travel_times
             data.loc[data['VehicleId'] == VehicleId, 'CumulativeTravelTime'] = vehicle_data['CumulativeTravelTime']
-
-        return data
+        if data['CumulativeTravelTime'].isna().any():
+            logging.info("CTT is failed")
+            return None
+        else:
+            return data
     except Exception as e:
         logging.error(f"Error: An unexpected error occurred. {e}")
         return None
@@ -707,7 +710,6 @@ def cumulative_time(data, center_lat, center_lon):
 #EScorts views from here
 
 def convert_to_time(time_str):
-    print(time_str)
     try:
         if type(time_str) == datetime.time:
             return time_str
@@ -801,7 +803,7 @@ def get_driving_distance_route(start_point, end_point):
             distance = data['paths'][0]['distance'] / 1000
             return distance
         else:
-            print(f"Error in distance calculation: {response.status_code}")
+            logging.error(f"Error in distance calculation: {response.status_code}")
             return None
     except Exception as e:
         logging.error(f"get_driving_distance error {e}")
